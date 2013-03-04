@@ -32,6 +32,9 @@ if exists("*GetJavaIndent")
   finish
 endif
 
+let s:keepcpo= &cpo
+set cpo&vim
+
 function! SkipJavaBlanksAndComments(startline)
   let lnum = a:startline
   while lnum > 1
@@ -140,5 +143,8 @@ function GetJavaIndent()
 
   return theIndent
 endfunction
+
+let &cpo = s:keepcpo
+unlet s:keepcpo
 
 " vi: sw=2 et
