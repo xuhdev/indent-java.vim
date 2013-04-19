@@ -1,5 +1,7 @@
 # Indent/java.vim
 
+[![Build Status](https://travis-ci.org/xuhdev/indent-java.vim.png)](https://travis-ci.org/xuhdev/indent-java.vim)
+
 This is the [Vim][] indent script for [Java][]. You could also find this script
 at [Vim Online][].
 
