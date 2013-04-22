@@ -71,12 +71,21 @@ function! GetJavaIndentWrapped(lnum)
 
   " The line under "throws" should be indented properly
   if IsMethodDetailLine(prevNonCommentLineNum) && !IsMethodDetailLine(currentLineNum)
-    let prevNonDetailIndent = indent(PrevNonMethodDetailLine(prevNonCommentLineNum))
-    if IsOpenBraceText(currentLineText)
-      return prevNonDetailIndent
+
+    " Make sure we indent based on the function definition
+    let prevNonDetailLine = PrevNonMethodDetailLine(prevNonCommentLineNum)
+    if EndsInCloseParen(RemoveTrailingCommentsText(getline(prevNonDetailLine)))
+      let prevNonDetailIndent = indent(GetMatchingEndIndentLine(prevNonDetailLine))
+    else
+      let prevNonDetailIndent = indent(PrevNonMethodDetailLine(prevNonCommentLineNum))
     endif
 
-    return prevNonDetailIndent + &sw
+    " We add an indent if we are not on an open brace line
+    if IsOpenBraceText(currentLineText)
+      return prevNonDetailIndent
+    else
+      return prevNonDetailIndent + &sw
+    endif
   endif
 
   " The line under "implements" or "extends" should be indented properly
@@ -94,9 +103,10 @@ function! GetJavaIndentWrapped(lnum)
     return indent(PrevNonClassDetailLine(prevNonCommentLineNum)) + &sw
   endif
 
-  " Aligns multi-line "throws"
+  " Aligns single and multi-line "throws"
   if IsMethodDetailLine(currentLineNum)
     let strippedText = RemoveTrailingCommentsText(currentLineText)
+
     if !IsLegalMethodDetailText(strippedText) && IsListPartText(strippedText)
       let computedIndent = GetIndentOfMethodDetailGivenLine(currentLineNum)
       if computedIndent < 0
@@ -106,10 +116,15 @@ function! GetJavaIndentWrapped(lnum)
       endif
     endif
 
+    " Ensure "throws" aligns with the function definition
+    if EndsInCloseParen(RemoveTrailingCommentsText(prevNonCommentLineText))
+      return indent(GetMatchingEndIndentLine(prevNonCommentLineNum)) + &sw
+    endif
+
     return indent(PrevNonMethodDetailLine(prevNonCommentLineNum)) + &sw
   endif
 
-  " Aligns multi-line "implements" and "extends"
+  " Aligns single and multi-line "implements" and "extends"
   if IsClassDetailLine(currentLineNum)
     let strippedText = RemoveTrailingCommentsText(currentLineText)
     if !IsLegalClassDetailText(strippedText) && IsListPartText(strippedText)
@@ -168,6 +183,10 @@ endfunction
 
 function! IsCloseBraceText(text)
   return a:text =~ '^\s*[})\]]'
+endfunction
+
+function! EndsInCloseParen(text)
+  return a:text =~ ')\s*$'
 endfunction
 
 " This function determines if the given line is a part of a list, eg:
@@ -337,7 +356,16 @@ endfunction
 
 " Works on lines starting with a match-able character eg. }, ), ], etc.
 function! GetMatchingIndentLine(lnum)
-  call cursor(currentLineNum, 1)
+  call cursor(a:lnum, 1)
+  silent normal %
+  return line('.')
+endfunction
+
+" Works on lines ending with a match-able character eg. }, ), ], etc.
+function! GetMatchingEndIndentLine(lnum)
+  let stripped = RemoveTrailingCommentsText(getline(a:lnum))
+  let stripped = substitute(stripped, '\s*$', '', '')
+  call cursor(a:lnum, len(stripped))
   silent normal %
   return line('.')
 endfunction
