@@ -58,15 +58,17 @@ function! GetJavaIndentWrapped(lnum)
   let defaultIndent = cindent(currentLineNum)
 
   " If we're in the middle of a comment then just trust cindent
-  if   IsCommentLine(currentLineNum) \
-    && !IsBlockCommentOpenText(currentLineText) \
-    && !IsSingleLineCommentText(currentLineText) \
-
+  if IsCommentLine(currentLineNum) && !IsBlockCommentOpenText(currentLineText) && !IsSingleLineCommentText(currentLineText)
     return defaultIndent
   endif
 
   " If the previous code line is an annotation, we should use the same indent
   if IsAnnotationText(prevNonCommentLineText)
+    return indent(prevNonCommentLineNum)
+  endif
+
+  " Annotations on classes indent too far after a comment
+  if IsAnnotationText(currentLineText) && IsCommentLine(prevLineNum) && !IsOpenBraceText(prevNonCommentLineText)
     return indent(prevNonCommentLineNum)
   endif
 
@@ -101,7 +103,13 @@ function! GetJavaIndentWrapped(lnum)
       endif
     endif
 
-    return indent(PrevNonClassDetailLine(prevNonCommentLineNum)) + &sw
+    " We add an indent if we are not on an open brace line
+    let PrevNonClassDetailLine(prevNonCommentLineNum)) + &sw
+    if IsOpenBraceText(currentLineText)
+      return prevNonDetailIndent
+    else
+      return prevNonDetailIndent + &sw
+    endif
   endif
 
   " Aligns single and multi-line "throws"
@@ -199,16 +207,16 @@ function! IsListPartText(text)
 endfunction
 
 function! IsLegalClassDetailText(text)
-  let singleDetail = '\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\),\?\s*$'
-  let multiDetail  = '\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\s*$'
-  let fullDetail   = '\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)\+\([a-zA-Z0-9$_]\+\)\s*{\?\s*$'
+  let singleDetail = '^\s*\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\),\?\s*$'
+  let multiDetail  = '^\s*\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\s*$'
+  let fullDetail   = '^\s*\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)\+\([a-zA-Z0-9$_]\+\)\s*{\?\s*$'
   return a:text =~ singleDetail || a:text =~ multiDetail || a:text =~ fullDetail
 endfunction
 
 function! IsLegalMethodDetailText(text)
-  let singleDetail = 'throws\s\+\([a-zA-Z0-9$_]\+\),\?\s*$'
-  let multiDetail  = 'throws\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\s*$'
-  let fullDetail   = 'throws\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)\+\([a-zA-Z0-9$_]\+\)\s*{\?\s*$'
+  let singleDetail = '^\s*throws\s\+\([a-zA-Z0-9$_]\+\),\?\s*$'
+  let multiDetail  = '^\s*throws\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\s*$'
+  let fullDetail   = '^\s*throws\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\([a-zA-Z0-9$_]\+\)\s*{\?\s*$'
   return a:text =~ singleDetail || a:text =~ multiDetail || a:text =~ fullDetail
 endfunction
 
@@ -230,10 +238,12 @@ function! IsCommentLine(lnum)
   endif
 
   while currentLineNum > 1
-    if IsBlockCommentCloseText(currentLineText)
-      return 0
-    elseif IsBlockCommentCloseText(currentLineText)
-      return 1
+    if !IsSingleLineCommentText(currentLineText)
+      if IsBlockCommentCloseText(currentLineText)
+        return 0
+      elseif IsBlockCommentOpenText(currentLineText)
+        return 1
+      endif
     endif
 
     let currentLineNum = currentLineNum - 1
