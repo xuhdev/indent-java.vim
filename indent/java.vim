@@ -1,6 +1,7 @@
 " Vim indent file
 " Language: Java
 " Previous Maintainer: Toby Allsopp <toby.allsopp@peace.com>
+" Current Maintainer: Hong Xu <hong@topbug.net>
 " Homepage: http://www.vim.org/scripts/script.php?script_id=3899
 "           https://github.com/xuhdev/indent-java.vim
 " Last Change:  2012 Jan 20
@@ -44,11 +45,11 @@ function! GetJavaIndentWrapped(lnum)
   let currentLineNum = a:lnum
   let currentLineText = getline(currentLineNum)
 
-  " find start of previous line
+  " Find start of previous line
   let prevLineNum = prevnonblank(currentLineNum - 1)
   let prevLineText = getline(prevLineNum)
 
-  "find start of previous non-comment line
+  " Find start of previous non-comment line
   let prevNonCommentLineNum = PrevNonCommentLine(currentLineNum - 1)
   let prevNonCommentLineText = getline(prevNonCommentLineNum)
 
@@ -174,7 +175,7 @@ function! IsBlockCommentCloseText(text)
 endfunction
 
 function! IsSingleLineCommentText(text)
-  return a:text =~ '^\s*\/\/'
+  return a:text =~ '^\s*\/\/' || a:text =~ '^\s*\/\*.*\*\/\s*$'
 endfunction
 
 function! IsOpenBraceText(text)
@@ -229,10 +230,10 @@ function! IsCommentLine(lnum)
   endif
 
   while currentLineNum > 1
-    if IsBlockCommentOpenText(currentLineText)
-      return 1
-    elseif IsBlockCommentCloseText(currentLineText)
+    if IsBlockCommentCloseText(currentLineText)
       return 0
+    elseif IsBlockCommentCloseText(currentLineText)
+      return 1
     endif
 
     let currentLineNum = currentLineNum - 1
