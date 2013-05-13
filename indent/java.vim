@@ -4,17 +4,17 @@
 " Current Maintainer: Hong Xu <hong@topbug.net>
 " Homepage: http://www.vim.org/scripts/script.php?script_id=3899
 "           https://github.com/xuhdev/indent-java.vim
-" Last Change:  2012 Jan 20
+" Last Change:  2013 May 14
 " Version: 1.0
 " License: Same as Vim.
 " Copyright (c) 2012 Hong Xu
 " Before 2012, this file was maintained by Toby Allsopp.
 
 " Only load this indent file when no other was loaded.
-if exists("b:did_indent")
+if exists("b:java_indent")
   finish
 endif
-let b:did_indent = 1
+let b:java_indent = 1
 
 " Indent Java anonymous classes correctly.
 setlocal cindent cinoptions& cinoptions+=j1
@@ -35,14 +35,13 @@ endif
 let s:keepcpo= &cpo
 set cpo&vim
 
-" Separate calling function from the function which does computation so we
-" can call it from another context
-function GetJavaIndent()
-  return GetJavaIndentWrapped(v:lnum)
-endfunction
-
-function! GetJavaIndentWrapped(lnum)
-  let currentLineNum = a:lnum
+function! GetJavaIndent(...)
+  " Lets us call this function with or without arguments
+  if len(a:000) > 0
+    let currentLineNum = a:1
+  else
+    let currentLineNum = v:lnum
+  endif
   let currentLineText = getline(currentLineNum)
 
   " Find start of previous line
@@ -50,7 +49,7 @@ function! GetJavaIndentWrapped(lnum)
   let prevLineText = getline(prevLineNum)
 
   " Find start of previous non-comment line
-  let prevNonCommentLineNum = PrevNonCommentLine(currentLineNum - 1)
+  let prevNonCommentLineNum = s:PrevNonCommentLine(currentLineNum - 1)
   let prevNonCommentLineText = getline(prevNonCommentLineNum)
 
   " Java is just like C; use the built-in C indenting and then correct a few
@@ -58,33 +57,56 @@ function! GetJavaIndentWrapped(lnum)
   let defaultIndent = cindent(currentLineNum)
 
   " If we're in the middle of a comment then just trust cindent
-  if IsCommentLine(currentLineNum) && !IsBlockCommentOpenText(currentLineText) && !IsSingleLineCommentText(currentLineText)
+  if s:IsCommentLine(currentLineNum)
+        \ && !s:IsBlockCommentOpenText(currentLineText)
+        \ && !s:IsSingleLineCommentText(currentLineText)
     return defaultIndent
   endif
 
   " If the previous code line is an annotation, we should use the same indent
-  if IsAnnotationText(prevNonCommentLineText)
+  if s:IsAnnotationText(prevNonCommentLineText)
     return indent(prevNonCommentLineNum)
   endif
 
-  " Annotations on classes indent too far after a comment
-  if IsAnnotationText(currentLineText) && IsCommentLine(prevLineNum) && !IsOpenBraceText(prevNonCommentLineText)
-    return indent(prevNonCommentLineNum)
+  " Annotations indent too far after a comment
+  if s:IsAnnotationText(currentLineText) && s:IsCommentLine(prevLineNum)
+
+    " We run into an issue when a comment is the first line in the file
+    if prevNonCommentLineNum == 1 && s:IsCommentLine(prevNonCommentLineNum)
+      return 0
+    endif
+
+    return indent(s:GetBeginningOfComment(prevLineNum))
+  endif
+
+  " When the line starts with a }, try aligning it with the matching {,
+  " skipping over "throws", "extends" and "implements" clauses.
+  if s:IsCloseBraceText(currentLineText)
+    let matchLineNum = s:GetMatchingIndentLine(currentLineNum)
+    if matchLineNum < currentLineNum
+      let matchLineNum = s:PrevNonCommentLine(matchLineNum)
+      if s:IsMethodDetailLine(matchLineNum)
+        let matchLineNum = s:PrevNonMethodDetailLine(matchLineNum)
+      elseif s:IsClassDetailLine(matchLineNum)
+        let matchLineNum = s:PrevNonClassDetailLine(matchLineNum)
+      endif
+      return indent(matchLineNum)
+    endif
   endif
 
   " The line under "throws" should be indented properly
-  if IsMethodDetailLine(prevNonCommentLineNum) && !IsMethodDetailLine(currentLineNum)
+  if s:IsMethodDetailLine(prevNonCommentLineNum) && !s:IsMethodDetailLine(currentLineNum)
 
     " Make sure we indent based on the function definition
-    let prevNonDetailLine = PrevNonMethodDetailLine(prevNonCommentLineNum)
-    if EndsInCloseParen(RemoveTrailingCommentsText(getline(prevNonDetailLine)))
-      let prevNonDetailIndent = indent(GetMatchingEndIndentLine(prevNonDetailLine))
+    let prevNonDetailLine = s:PrevNonMethodDetailLine(prevNonCommentLineNum)
+    if s:EndsInCloseParen(s:RemoveTrailingCommentsText(getline(prevNonDetailLine)))
+      let prevNonDetailIndent = indent(s:GetMatchingEndIndentLine(prevNonDetailLine))
     else
-      let prevNonDetailIndent = indent(PrevNonMethodDetailLine(prevNonCommentLineNum))
+      let prevNonDetailIndent = indent(s:PrevNonMethodDetailLine(prevNonCommentLineNum))
     endif
 
     " We add an indent if we are not on an open brace line
-    if IsOpenBraceText(currentLineText)
+    if s:IsOpenBraceText(currentLineText)
       return prevNonDetailIndent
     else
       return prevNonDetailIndent + &sw
@@ -92,10 +114,11 @@ function! GetJavaIndentWrapped(lnum)
   endif
 
   " The line under "implements" or "extends" should be indented properly
-  if IsClassDetailLine(prevNonCommentLineNum) && !IsClassDetailLine(currentLineNum)
-    let strippedText = RemoveTrailingCommentsText(currentLineText)
-    if !IsClassDetailLine(strippedText) && IsListPartText(strippedText)
-      let computedIndent = GetIndentOfClassDetailGivenLine(currentLineNum)
+  if s:IsClassDetailLine(prevNonCommentLineNum) && !s:IsClassDetailLine(currentLineNum)
+    let strippedText = s:RemoveTrailingCommentsText(currentLineText)
+
+    if s:IsListPartText(strippedText)
+      let computedIndent = s:GetIndentOfClassDetailGivenLine(currentLineNum)
       if computedIndent < 0
         return defaultIndent
       else
@@ -104,40 +127,19 @@ function! GetJavaIndentWrapped(lnum)
     endif
 
     " We add an indent if we are not on an open brace line
-    let PrevNonClassDetailLine(prevNonCommentLineNum)) + &sw
-    if IsOpenBraceText(currentLineText)
+    let prevNonDetailIndent = indent(s:PrevNonClassDetailLine(prevNonCommentLineNum))
+    if s:IsOpenBraceText(currentLineText)
       return prevNonDetailIndent
     else
       return prevNonDetailIndent + &sw
     endif
   endif
 
-  " Aligns single and multi-line "throws"
-  if IsMethodDetailLine(currentLineNum)
-    let strippedText = RemoveTrailingCommentsText(currentLineText)
-
-    if !IsLegalMethodDetailText(strippedText) && IsListPartText(strippedText)
-      let computedIndent = GetIndentOfMethodDetailGivenLine(currentLineNum)
-      if computedIndent < 0
-        return defaultIndent
-      else
-        return computedIndent
-      endif
-    endif
-
-    " Ensure "throws" aligns with the function definition
-    if EndsInCloseParen(RemoveTrailingCommentsText(prevNonCommentLineText))
-      return indent(GetMatchingEndIndentLine(prevNonCommentLineNum)) + &sw
-    endif
-
-    return indent(PrevNonMethodDetailLine(prevNonCommentLineNum)) + &sw
-  endif
-
   " Aligns single and multi-line "implements" and "extends"
-  if IsClassDetailLine(currentLineNum)
-    let strippedText = RemoveTrailingCommentsText(currentLineText)
-    if !IsLegalClassDetailText(strippedText) && IsListPartText(strippedText)
-      let computedIndent = GetIndentOfClassDetailGivenLine(currentLineNum)
+  if s:IsClassDetailLine(currentLineNum)
+    let strippedText = s:RemoveTrailingCommentsText(currentLineText)
+    if !s:IsLegalClassDetailText(strippedText) && s:IsListPartText(strippedText)
+      let computedIndent = s:GetIndentOfClassDetailGivenLine(currentLineNum)
       if computedIndent < 0
         return defaultIndent
       else
@@ -145,22 +147,22 @@ function! GetJavaIndentWrapped(lnum)
       endif
     endif
 
-    return indent(PrevNonClassDetailLine(prevNonCommentLineNum)) + &sw
+    return indent(s:PrevNonClassDetailLine(prevNonCommentLineNum)) + &sw
   endif
 
-  " When the line starts with a }, try aligning it with the matching {,
-  " skipping over "throws", "extends" and "implements" clauses.
-  if IsCloseBraceText(currentLineText)
-    let matchLineNum = GetMatchingIndentLine(currentLineNum)
-    if matchLineNum < currentLineNum
-      let matchLineNum = PrevNonCommentLine(matchLineNum)
-      if IsMethodDetailLine(matchLineNum)
-        let matchLineNum = PrevNonMethodDetailLine(matchLineNum)
-      elseif IsClassDetailLine(matchLineNum)
-        let matchLineNum = PrevNonClassDetailLine(matchLineNum)
+  " Aligns single and multi-line "throws"
+  if s:IsMethodDetailLine(currentLineNum)
+    let strippedText = s:RemoveTrailingCommentsText(currentLineText)
+    if !s:IsLegalMethodDetailText(strippedText) && s:IsListPartText(strippedText)
+      let computedIndent = s:GetIndentOfMethodDetailGivenLine(currentLineNum)
+      if computedIndent < 0
+        return defaultIndent
+      else
+        return computedIndent
       endif
-      return indent(matchLineNum)
     endif
+
+    return indent(s:PrevNonClassDetailLine(prevNonCommentLineNum)) + &sw
   endif
 
   return defaultIndent
@@ -170,31 +172,31 @@ endfunction
 " SIMPLE REGEX CLASSIFICATION FUNCTIONS
 "
 
-function! IsAnnotationText(text)
+function s:IsAnnotationText(text)
   return a:text =~ '^\s*@'
 endfunction
 
-function! IsBlockCommentOpenText(text)
+function s:IsBlockCommentOpenText(text)
   return a:text =~ '^\s*\/\*'
 endfunction
 
-function! IsBlockCommentCloseText(text)
-  return RemoveTrailingCommentsText(a:text) =~ '\*\/\s*$'
+function s:IsBlockCommentCloseText(text)
+  return s:RemoveTrailingCommentsText(a:text) =~ '\*\/\s*$'
 endfunction
 
-function! IsSingleLineCommentText(text)
+function s:IsSingleLineCommentText(text)
   return a:text =~ '^\s*\/\/' || a:text =~ '^\s*\/\*.*\*\/\s*$'
 endfunction
 
-function! IsOpenBraceText(text)
+function s:IsOpenBraceText(text)
   return a:text =~ '^\s*{'
 endfunction
 
-function! IsCloseBraceText(text)
+function s:IsCloseBraceText(text)
   return a:text =~ '^\s*[})\]]'
 endfunction
 
-function! EndsInCloseParen(text)
+function s:EndsInCloseParen(text)
   return a:text =~ ')\s*$'
 endfunction
 
@@ -202,22 +204,16 @@ endfunction
 " ex1: item1, item2
 " ex2: item1,
 " ex3: item2 {
-function! IsListPartText(text)
-  return a:text =~ '^\s*\([a-zA-Z0-9$_]\+\s*\)\(,\s*[a-zA-Z0-9$_]\+\s*\)*'
+function s:IsListPartText(text)
+  return a:text =~ '^\s*\([a-zA-Z0-9$_]\+\s*,\s*\)*[a-zA-Z0-9$_]\+\s*\(,\s*\)\?\({\s*\)\?$'
 endfunction
 
-function! IsLegalClassDetailText(text)
-  let singleDetail = '^\s*\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\),\?\s*$'
-  let multiDetail  = '^\s*\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\s*$'
-  let fullDetail   = '^\s*\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)\+\([a-zA-Z0-9$_]\+\)\s*{\?\s*$'
-  return a:text =~ singleDetail || a:text =~ multiDetail || a:text =~ fullDetail
+function s:IsLegalClassDetailText(text)
+  return a:text =~ '^\s*\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\([a-zA-Z0-9$_]\+\)'
 endfunction
 
-function! IsLegalMethodDetailText(text)
-  let singleDetail = '^\s*throws\s\+\([a-zA-Z0-9$_]\+\),\?\s*$'
-  let multiDetail  = '^\s*throws\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\s*$'
-  let fullDetail   = '^\s*throws\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\([a-zA-Z0-9$_]\+\)\s*{\?\s*$'
-  return a:text =~ singleDetail || a:text =~ multiDetail || a:text =~ fullDetail
+function s:IsLegalMethodDetailText(text)
+  return a:text =~ '^\s*throws\s\+\([a-zA-Z0-9$_]\+\s*,\s*\)*\([a-zA-Z0-9$_]\+\)'
 endfunction
 
 "
@@ -227,21 +223,21 @@ endfunction
 " Scrolls backwards looking for the start or end of a comment block
 " If it finds the end of a comment block, we are outside a comment
 " If it finds the start of a comment block, we are inside a comment
-function! IsCommentLine(lnum)
+function s:IsCommentLine(lnum)
   let currentLineNum = a:lnum
   let currentLineText = getline(currentLineNum)
 
-  if IsSingleLineCommentText(currentLineText)
+  if s:IsSingleLineCommentText(currentLineText)
     return 1
-  elseif IsBlockCommentCloseText(currentLineText)
+  elseif s:IsBlockCommentCloseText(currentLineText)
     return 1
   endif
 
-  while currentLineNum > 1
-    if !IsSingleLineCommentText(currentLineText)
-      if IsBlockCommentCloseText(currentLineText)
+  while currentLineNum > 0
+    if !s:IsSingleLineCommentText(currentLineText)
+      if s:IsBlockCommentCloseText(currentLineText)
         return 0
-      elseif IsBlockCommentOpenText(currentLineText)
+      elseif s:IsBlockCommentOpenText(currentLineText)
         return 1
       endif
     endif
@@ -254,20 +250,20 @@ function! IsCommentLine(lnum)
 endfunction
 
 " Tests for both single-line and multi-line "implements" and "extends"
-function! IsClassDetailLine(lnum)
+function s:IsClassDetailLine(lnum)
   let currentLineNum = a:lnum
-  let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+  let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
   let concattedText = currentLineText
 
   while currentLineNum > 1
-    if IsLegalClassDetailText(concattedText)
+    if s:IsLegalClassDetailText(concattedText)
       return 1
-    elseif !IsListPartText(currentLineText)
+    elseif !s:IsListPartText(currentLineText)
       return 0
     else
-      let currentLineNum = PrevNonCommentLine(currentLineNum - 1)
-      let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
-      let concattedText = currentLineText . " " . concattedText
+      let currentLineNum = s:PrevNonCommentLine(currentLineNum - 1)
+      let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
+      let concattedText = printf("%s %s", currentLineText, concattedText)
     endif
   endwhile
 
@@ -275,20 +271,20 @@ function! IsClassDetailLine(lnum)
 endfunction
 
 " Tests for both single-line and multi-line "throws"
-function! IsMethodDetailLine(lnum)
+function s:IsMethodDetailLine(lnum)
   let currentLineNum = a:lnum
-  let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+  let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
   let concattedText = currentLineText
 
   while currentLineNum > 1
-    if IsLegalMethodDetailText(concattedText)
+    if s:IsLegalMethodDetailText(concattedText)
       return 1
-    elseif !IsListPartText(currentLineText)
+    elseif !s:IsListPartText(currentLineText)
       return 0
     else
-      let currentLineNum = PrevNonCommentLine(currentLineNum - 1)
-      let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
-      let concattedText = currentLineText . " " . concattedText
+      let currentLineNum = s:PrevNonCommentLine(currentLineNum - 1)
+      let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
+      let concattedText = printf("%s %s", currentLineText, concattedText)
     endif
   endwhile
 
@@ -302,20 +298,20 @@ endfunction
 " Assuming you are in the middle of a class detail line, looks backwards for the
 " first occurrence of "implements" or "extends" and returns the indentation of
 " the first word after it
-function! GetIndentOfClassDetailGivenLine(lnum)
+function s:GetIndentOfClassDetailGivenLine(lnum)
   let currentLineNum = a:lnum
-  let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+  let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
   let concattedText = currentLineText
 
   while currentLineNum > 1
-    if IsLegalClassDetailText(concattedText)
-      let start = match(currentLineText,'\(implements\|extends\)\s\+\([a-zA-Z0-9$_]\+\s*\)\(,\s*[a-zA-Z0-9$_]\+\s*\)*{\?\s*$')
+    if s:IsLegalClassDetailText(concattedText)
+      let start = match(currentLineText,'\(implements\|extends\).*$')
       return matchend(currentLineText, '\(implements\|extends\)\s*', start)
-    elseif !IsListPartText(currentLineText)
+    elseif !s:IsListPartText(currentLineText)
       return -1
     else
-      let currentLineNum = PrevNonCommentLine(currentLineNum - 1)
-      let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+      let currentLineNum = s:PrevNonCommentLine(currentLineNum - 1)
+      let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
       let concattedText = currentLineText . " " . concattedText
     endif
   endwhile
@@ -323,23 +319,20 @@ function! GetIndentOfClassDetailGivenLine(lnum)
   return -1
 endfunction
 
-" Assuming you are in the middle of a class detail line, looks backwards for the
-" first occurrence of "throws" and returns the indentation of the first word
-" after it
-function! GetIndentOfMethodDetailGivenLine(lnum)
+function s:GetIndentOfMethodDetailGivenLine(lnum)
   let currentLineNum = a:lnum
-  let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+  let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
   let concattedText = currentLineText
 
   while currentLineNum > 1
-    if IsLegalMethodDetailText(concattedText)
-      let start = match(currentLineText, 'throws\s\+\([a-zA-Z0-9$_]\+\s*\)\(,\s*[a-zA-Z0-9$_]\+\s*\)*{\?\s*$')
+    if s:IsLegalMethodDetailText(concattedText)
+      let start = match(currentLineText,'throws.*$')
       return matchend(currentLineText, 'throws\s*', start)
-    elseif !IsListPartText(currentLineText)
+    elseif !s:IsListPartText(currentLineText)
       return -1
     else
-      let currentLineNum = PrevNonCommentLine(currentLineNum - 1)
-      let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+      let currentLineNum = s:PrevNonCommentLine(currentLineNum - 1)
+      let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
       let concattedText = currentLineText . " " . concattedText
     endif
   endwhile
@@ -352,12 +345,12 @@ endfunction
 "
 
 " Finds parts of lines ending in // or /* ... */ and removes them recursively
-function! RemoveTrailingCommentsText(text)
+function s:RemoveTrailingCommentsText(text)
   let stripped = substitute(a:text, '\(\/\/.*\)\|\(\/\*.*\*\/\s*\)$', '', '')
   if strlen(a:text) == strlen(stripped)
     return stripped
   else
-    return RemoveTrailingCommentsText(stripped)
+    return s:RemoveTrailingCommentsText(stripped)
   endif
 endfunction
 
@@ -365,52 +358,86 @@ endfunction
 " LINE REVERSE-FIND FUNCTIONS
 "
 
+" Works on single-line and multi-line comments
+function s:GetBeginningOfComment(lnum)
+  let currentLineNum = a:lnum
+
+  if s:IsSingleLineCommentText(getline(currentLineNum))
+    return currentLineNum
+  endif
+
+  while currentLineNum > 0 && !s:IsBlockCommentOpenText(getline(currentLineNum))
+    let currentLineText = getline(currentLineNum)
+    let currentLineNum = currentLineNum - 1
+  endwhile
+
+  return currentLineNum
+endfunction
+
 " Works on lines starting with a match-able character eg. }, ), ], etc.
-function! GetMatchingIndentLine(lnum)
+function s:GetMatchingIndentLine(lnum)
   call cursor(a:lnum, 1)
   silent normal %
   return line('.')
 endfunction
 
 " Works on lines ending with a match-able character eg. }, ), ], etc.
-function! GetMatchingEndIndentLine(lnum)
-  let stripped = RemoveTrailingCommentsText(getline(a:lnum))
+function s:GetMatchingEndIndentLine(lnum)
+  let stripped = s:RemoveTrailingCommentsText(getline(a:lnum))
   let stripped = substitute(stripped, '\s*$', '', '')
   call cursor(a:lnum, len(stripped))
   silent normal %
   return line('.')
 endfunction
 
-function! PrevNonCommentLine(lnum)
+function s:PrevNonCommentLine(lnum)
   let currentLineNum = prevnonblank(a:lnum)
   let currentLineText = getline(currentLineNum)
-  while currentLineNum > 1 && IsCommentLine(currentLineNum)
+  while currentLineNum > 1 && s:IsCommentLine(currentLineNum)
     let currentLineNum = prevnonblank(currentLineNum - 1)
     let currentLineText = getline(currentLineNum)
   endwhile
   return currentLineNum
 endfunction
 
-function! PrevNonMethodDetailLine(lnum)
+function s:PrevNonMethodDetailLine(lnum)
   let currentLineNum = prevnonblank(a:lnum)
-  let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
-  while currentLineNum > 1 && IsMethodDetailLine(currentLineNum)
+  let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
+  while currentLineNum > 1 && s:IsMethodDetailLine(currentLineNum)
     let currentLineNum = prevnonblank(currentLineNum - 1)
-    let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+    let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
   endwhile
 
   return currentLineNum
 endfunction
 
-function! PrevNonClassDetailLine(lnum)
+function s:PrevNonClassDetailLine(lnum)
   let currentLineNum = prevnonblank(a:lnum)
-  let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
-  while currentLineNum > 1 && IsClassDetailLine(currentLineNum)
+  let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
+  while currentLineNum > 1 && s:IsClassDetailLine(currentLineNum)
     let currentLineNum = prevnonblank(currentLineNum - 1)
-    let currentLineText = RemoveTrailingCommentsText(getline(currentLineNum))
+    let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
   endwhile
 
   return currentLineNum
+endfunction
+
+function s:IsClassDefinitionLine(lnum)
+  let  currentLineNum = a:lnum
+  let currentLineText = s:RemoveTrailingCommentsText(getline(currentLineNum))
+  let concattedText = currentLineText
+
+  while currentLineNum > 0
+    if IsLegalClassDefinitionText(concattedText)
+      return 1
+    elseif ContainsSemicolon(currentLineText)
+          \ || ContainsCloseBrace(currentLineText)
+          \ || s:IsAnnotationText(currentLineText)
+      return 0
+    endif
+  endwhile
+
+  return 0
 endfunction
 
 let &cpo = s:keepcpo
