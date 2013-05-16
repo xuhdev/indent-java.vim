@@ -1,4 +1,12 @@
+/*
+ * Block Comment
+ */
+@ClassAnnotation
+@AnotherClassAnnotation
 class Test {
+    /*
+     * Block comment
+     */
     @Override
-indent_here
+    private int member1;
 }
