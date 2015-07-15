@@ -119,7 +119,7 @@ function GetJavaIndent()
   " skipping over "throws", "extends" and "implements" clauses.
   if getline(v:lnum) =~ '^\s*}\s*\(//.*\|/\*.*\)\=$'
     call cursor(v:lnum, 1)
-    silent normal %
+    silent normal! %
     let lnum = line('.')
     if lnum < v:lnum
       while lnum > 1
