@@ -9,7 +9,7 @@ def test_indent(vim, file_name, line_num, correct_indent)
   vim.edit File.expand_path("../#{file_name}", __FILE__)
   vim.set('ft', 'java')
   vim.normal "#{line_num}G=="
-  vim.echo("indent(#{line_num})").should == "#{correct_indent}"
+  expect(vim.echo("indent(#{line_num})")).to eq("#{correct_indent}")
   vim.command "bd!"
 end
 
