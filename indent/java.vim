@@ -73,7 +73,7 @@ function GetJavaIndent()
 
   " If the previous line starts with '@', we should have the same indent as
   " the previous one
-  if getline(lnum) =~ '^\s*@\S\+\s*$'
+  if getline(lnum) =~ '^\s*@.*$'
     return indent(lnum)
   endif
 
