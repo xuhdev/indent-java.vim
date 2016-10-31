@@ -88,8 +88,8 @@ function GetJavaIndent()
 
   " Try to align "throws" lines for methods and "extends" and "implements" for
   " classes.
-  if getline(v:lnum) =~ '^\s*\(extends\|implements\)\>'
-        \ && getline(lnum) !~ '^\s*\(extends\|implements\)\>'
+  if getline(v:lnum) =~ '^\s*\(throws\|extends\|implements\)\>'
+        \ && getline(lnum) !~ '^\s*\(throws\|extends\|implements\)\>'
     let theIndent = theIndent + &sw
   endif
 
