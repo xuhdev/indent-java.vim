@@ -4,11 +4,11 @@
 " Current Maintainer: Hong Xu <hong@topbug.net>
 " Homepage: http://www.vim.org/scripts/script.php?script_id=3899
 "           https://github.com/xuhdev/indent-java.vim
-" Last Change:	2012 Jan 20
-" Version: 1.0
+" Last Change:	2016 Mar 7
+" Version: 1.1
 " License: Same as Vim.
-" Copyright (c) 2012 Hong Xu
-" Before 2012, this file is maintained by Toby Allsopp.
+" Copyright (c) 2012-2016 Hong Xu
+" Before 2012, this file was maintained by Toby Allsopp.
 
 " Only load this indent file when no other was loaded.
 if exists("b:did_indent")
